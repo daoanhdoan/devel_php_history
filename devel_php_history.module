@@ -1,0 +1,217 @@
+<?php
+
+use Drupal\Component\Utility\NestedArray;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\user\Entity\User;
+
+
+/**
+ *
+ */
+function devel_php_history_form_devel_execute_form_alter(&$form, FormStateInterface &$formState)
+{
+  $query = \Drupal::database()->select('devel_php_history', 'h')->extend('\Drupal\Core\Database\Query\PagerSelectExtender');
+  $query->fields('h')
+    ->limit(50)
+    ->addTag('devel_php_history_access');
+  $results = $query->execute()->fetchAll();
+  $options = array();
+  foreach ($results as $item) {
+    /** @var User $account */
+    $account = \Drupal::entityTypeManager()->getStorage('user')->load($item->uid);
+    $options[$item->id] = array(
+      'id' => ['#markup' => $item->id],
+      'script' => ['#markup' => $item->script],
+      'uid' => ['#markup' => $account->getAccountName()],
+      'created' => ['#markup' => \Drupal::service('date.formatter')->format($item->created)],
+      'executed' => ['#markup' => \Drupal::service('date.formatter')->format($item->executed)],
+      'archive' => [
+        '#type' => 'checkbox',
+        '#attributes' => ['class' => ['devel-php-history-archive-item'], 'data-hid-' . $item->id],
+        '#history_id' => $item->id,
+        '#ajax' => [
+          'callback' => 'devel_php_history_update_archive',
+          'wrapper' => 'devel-php-history-archive-wrapper-' . $item->id
+        ],
+        '#prefix'=> '<div id="devel-php-history-archive-wrapper-' . $item->id . '">',
+        '#suffix' => '</div>'
+      ],
+      'load' => [
+        '#name' => "devel_php_history_load_{$item->id}",
+        '#type' => 'submit',
+        '#value' => t('Load'),
+        '#history_id' => $item->id,
+        '#submit' => ['devel_php_history_load_history_form_submit']
+      ],
+      'delete' => [
+        '#name' => "devel_php_history_delete_{$item->id}",
+        '#type' => 'submit',
+        '#value' => t('Delete'),
+        '#history_id' => $item->id,
+        '#submit' => ['devel_php_history_delete_history_form_submit']
+      ]
+    );
+    if ($item->archive) {
+      $options[$item->id]['archive']['#attributes']['checked'] = 'checked';
+    }
+  }
+  $header = array(
+    'id' => t('ID'),
+    'script' => t('Script'),
+    'uid' => t('User'),
+    'created' => t('Created'),
+    'executed' => t('Executed'),
+    'archive' => ['data' => "Archive", 'class' => ['devel-php-history-archive-all']],
+    'load' => t('Load'),
+    'delete' => t('Delete')
+  );
+
+
+  $form['history_fieldset'] = array(
+    '#type' => 'details',
+    '#title' => t('History'),
+    '#weight' => -10,
+    '#attributes' => ['id' => 'devel-php-history-wrapper']
+  );
+  $form['history_fieldset']['history'] = $options;
+  $form['history_fieldset']['history'] += array(
+    '#type' => 'table',
+    '#header' => $header,
+    '#empty' => t('No content available.'),
+    '#tree' => TRUE,
+    '#attached' => ['library' => ["devel_php_history/devel_php_history"]]
+  );
+
+  $form['history_fieldset']['pager'] = ['#type' => 'pager'];
+
+  // Check existence of records.
+  $exist_records = \Drupal::database()->select('devel_php_history', 'h')
+    ->fields('h', array('id'))
+    ->range(0, 1)
+    ->execute()
+    ->fetchField();
+
+  // Add button for clearing history.
+  if ($exist_records) {
+    $form['history_fieldset']['clear_history'] = array(
+      '#type' => 'submit',
+      '#value' => t('Clear history'),
+      '#submit' => array('devel_php_history_clear_history_form_submit'),
+    );
+  }
+
+  $form['execute']['#prefix'] = '<div id="devel-php-execute-wrapper">';
+  $form['execute']['#suffix'] = '</div>';
+
+  $form['#submit'][] = 'devel_php_history_form_submit';
+}
+
+function devel_php_history_update_archive(&$form, FormStateInterface &$form_state)
+{
+  $trigger = $form_state->getTriggeringElement();
+  $id = !empty($trigger['#history_id']) ? $trigger['#history_id'] : 0;
+  if ($id) {
+    $item = devel_php_history_load($id);
+    if ($item) {
+      $value = NestedArray::getValue($form_state->getValues(), $trigger['#parents']);
+      \Drupal::database()->update('devel_php_history')->fields(['archive' => $value])->condition('id', $id)->execute();
+    }
+  }
+  $form_state->setRebuild();
+  return $form['history_fieldset']['history'][$id]['archive'];
+}
+
+function devel_php_history_load_history_form_submit(&$form, FormStateInterface &$form_state)
+{
+  $trigger = $form_state->getTriggeringElement();
+  $id = !empty($trigger['#history_id']) ? $trigger['#history_id'] : 0;
+  if ($id) {
+    $item = devel_php_history_load($id);
+    $_SESSION['devel_execute_code'] = $item->script;
+  }
+}
+
+function devel_php_history_delete_history_form_submit(&$form, FormStateInterface &$form_state)
+{
+  $trigger = $form_state->getTriggeringElement();
+  $id = !empty($trigger['#history_id']) ? $trigger['#history_id'] : 0;
+  if ($id) {
+    devel_php_history_delete($id);
+  }
+}
+
+function devel_php_history_clear_history_form_submit(&$form, FormStateInterface &$form_state)
+{
+  $delete = \Drupal::database()->delete('devel_php_history');
+  $or = $delete->orConditionGroup()->condition('archive', FALSE)->isNull('archive');
+  $delete->condition($or)->execute();
+}
+
+/**
+ * Custom submit handler for the devel php execute form (devel/php).
+ */
+function devel_php_history_form_submit(&$form, &$form_state)
+{
+  $code = $form_state->getValue('code');
+
+  if ($code) {
+    $script = array('script' => $code);
+    $cid = \Drupal::database()->select('devel_php_history', 'h')
+      ->fields('h', ['id'])
+      ->condition('script', $code)
+      ->execute()
+      ->fetchField(0);
+    if ($cid) {
+      $script['id'] = $cid;
+    }
+    devel_php_history_save($script);
+  }
+}
+
+/**
+ * Loads a auto fieldvalue from the database.
+ */
+function devel_php_history_load($id)
+{
+  $result = \Drupal::database()->select('devel_php_history', 'h')
+    ->fields('h')
+    ->condition('id', $id)
+    ->execute()
+    ->fetchObject();
+
+  if (!$result) {
+    return FALSE;
+  }
+
+  return (object)$result;
+}
+
+/**
+ * Updates a auto_value.
+ */
+function devel_php_history_save($script)
+{
+  $script += array(
+    'id' => NULL,
+    'uid' => \Drupal::currentUser()->id(),
+    'created' => \Drupal::time()->getRequestTime(),
+    'executed' => \Drupal::time()->getRequestTime(),
+  );
+  if (devel_php_history_load($script['id'])) {
+    \Drupal::database()->update('devel_php_history')->fields($script)->condition('id', $script['id'])->execute();
+  } else {
+    \Drupal::database()->insert('devel_php_history')->fields($script)->execute();
+  }
+}
+
+/**
+ * Deletes auto_value.
+ */
+function devel_php_history_delete($id)
+{
+  if (devel_php_history_load($id)) {
+    return \Drupal::database()->delete('devel_php_history')
+      ->condition('id', $id)
+      ->execute();
+  }
+}

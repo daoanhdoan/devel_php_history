@@ -1,0 +1,55 @@
+<?php
+
+/**
+ * @file
+ * Install script for PHP execute extension module.
+ */
+
+/**
+ * Implements @see hook_schema().
+ */
+function devel_php_history_schema() {
+  $schema['devel_php_history'] = array(
+    'description' => 'PHP execute history',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The internal ID.',
+        'type' => 'serial',
+        'size' => 'small',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+      ),
+      'uid' => array(
+        'description' => 'User ID',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'script' => array(
+        'description' => 'The executed script',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'created' => array(
+        'description' => 'Created time',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'executed' => array(
+        'description' => 'Last executed time',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'archive' => array(
+        'description' => 'Archive',
+        'type' => 'int',
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+
+  return $schema;
+}

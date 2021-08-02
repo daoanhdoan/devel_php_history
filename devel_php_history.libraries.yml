@@ -1,0 +1,6 @@
+devel_php_history:
+  js:
+    js/devel_php_history.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal

@@ -1,0 +1,9 @@
+{
+  "name": "daoanhdoan/devel_php_history",
+  "description": "Devel PHP - History - Re-add Execute PHP feature to Devel.",
+  "type": "drupal-custom-module",
+  "license":"GPL-2.0",
+  "extra": {
+    "installer-name": "devel_php_history"
+  }
+}
