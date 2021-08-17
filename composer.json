@@ -7,7 +7,7 @@
         "installer-name": "devel_php_history"
     },
     "require": {
-        "devel/devel_php": "*",
-        "devel/devel": "*"
+        "drupal/devel_php": "*",
+        "drupal/devel": "*"
     }
 }
